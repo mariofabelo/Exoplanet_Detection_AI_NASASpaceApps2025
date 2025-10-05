@@ -1,30 +1,34 @@
 export interface PredictionResult {
-  kepoi_name: string;
+  user_id?: string;
+  kepoi_name?: string;
+  pl_name?: string;
+  row_index?: number;
   prediction: number;
-  actual: number;
   confidence: number;
-}
-
-export interface TestSetMetrics {
-  accuracy: number;
-  precision: number;
-  recall_sensitivity: number;
-  specificity: number;
-  f1: number;
+  prediction_label: string;
 }
 
 export interface ModelResults {
   predictions: PredictionResult[];
-  test_set: TestSetMetrics;
+  total_samples: number;
+  candidate_count: number;
+  confirmed_count: number;
   runtime_seconds: number;
+  model_info: {
+    model_type: string;
+    pre_trained: boolean;
+  };
   error?: string;
 }
 
 import { config } from './config';
 
-export async function runModelOnDataset(file: File): Promise<ModelResults> {
+export async function runModelOnDataset(file: File, idColumnName?: string): Promise<ModelResults> {
   const formData = new FormData();
   formData.append("file", file);
+  if (idColumnName) {
+    formData.append("id_column", idColumnName);
+  }
 
   // Use the FastAPI endpoint instead of Gradio
   const apiUrl = `${config.HF_SPACE_URL}${config.API_ENDPOINTS.PREDICT}`;
@@ -50,11 +54,15 @@ export async function runModelOnDataset(file: File): Promise<ModelResults> {
 /**
  * Converts prediction results to CSV format for download
  * @param predictions Array of prediction results
- * @returns CSV string with kepoi_name, prediction, and confidence columns
+ * @returns CSV string with identifier, prediction, prediction_label, and confidence columns
  */
 export function predictionsToCSV(predictions: PredictionResult[]): string {
-  const headers = "kepoi_name,prediction,confidence\n";
-  const rows = predictions.map(pred => `${pred.kepoi_name},${pred.prediction},${pred.confidence.toFixed(4)}`).join("\n");
+  const headers = "identifier,prediction,prediction_label,confidence\n";
+  const rows = predictions.map(pred => {
+    // Try different ID fields in order of preference
+    const identifier = pred.user_id || pred.kepoi_name || pred.pl_name || `row_${pred.row_index || 0}`;
+    return `${identifier},${pred.prediction},${pred.prediction_label},${pred.confidence.toFixed(4)}`;
+  }).join("\n");
   return headers + rows;
 }
 
