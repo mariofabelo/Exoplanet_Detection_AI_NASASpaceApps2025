@@ -51,3 +51,5 @@ coverage/
 /huggingface-space
 /prepare_huggingface_model.py
 /problem_scaler_pkl.py
+
+.env
