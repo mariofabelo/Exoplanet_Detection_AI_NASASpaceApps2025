@@ -1,6 +1,17 @@
-# Exoplanet Model Visualizer
+# AI Exoplanet Detection System
 
-A full-stack application that combines a Next.js frontend with a Hugging Face Space backend to visualize machine learning model performance metrics.
+![Exoplanets in Deep Space](Exoplanets%20in%20Deep%20Space.png)
+
+A full-stack application that combines a Next.js frontend with a Hugging Face Space backend to detect and classify exoplanets using machine learning models trained on combined Kepler, K2, and TESS datasets.
+
+## Trained Model
+
+Trained model on combined Kepler, K2 and TESS datasets
+
+### Datasets
+- **Kepler**: https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=cumulative
+- **K2**: https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=k2pandc
+- **TESS**: https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=TOI
 
 ## Project Structure
 
@@ -8,14 +19,35 @@ A full-stack application that combines a Next.js frontend with a Hugging Face Sp
 /project
 ├── frontend/ (Next.js)
 │   ├── app/
+│   │   ├── page.tsx          # Main application page
+│   │   ├── layout.tsx        # App layout
+│   │   └── globals.css       # Global styles
 │   ├── components/
+│   │   └── ui/               # Reusable UI components
+│   │       ├── button.tsx
+│   │       └── card.tsx
 │   ├── lib/
-│   └── .env.local
-└── huggingface-space/
-    ├── app.py
-    ├── requirements.txt
-    ├── example_dataset.csv
-    └── README.md
+│   │   ├── runModel.ts       # API integration logic
+│   │   ├── config.ts         # Configuration settings
+│   │   └── utils.ts          # Utility functions
+│   ├── public/
+│   │   └── nasa-logo.png
+│   ├── package.json
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   └── next.config.js
+├── huggingface-space/
+│   ├── app.py
+│   ├── requirements.txt
+│   ├── example_dataset.csv
+│   └── README.md
+└── [model files]
+    ├── rf_model.pkl
+    ├── rf_model2.pkl
+    ├── rf_model4.pkl
+    ├── scaler.pkl
+    ├── scaler2.pkl
+    └── scaler4.pkl
 ```
 
 ## Setup Instructions
@@ -34,10 +66,7 @@ A full-stack application that combines a Next.js frontend with a Hugging Face Sp
 
 3. Create `.env.local` file with your environment variables:
    ```
-   NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-project-url.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-   SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-   NEXT_PUBLIC_HF_SPACE_URL=https://huggingface.co/spaces/your-username/exoplanet-model/api/predict
+   NEXT_PUBLIC_HF_SPACE_URL=https://huggingface.co/spaces/mariofabelo/AI_Exoplanet_Detection_Mario_copy/api/predict
    ```
 
 4. Run the development server:
@@ -45,48 +74,72 @@ A full-stack application that combines a Next.js frontend with a Hugging Face Sp
    npm run dev
    ```
 
-### 2. Hugging Face Space Setup
+### 2. Backend Integration
 
-1. Go to [Hugging Face Spaces](https://huggingface.co/spaces)
-2. Click "Create new Space"
-3. Choose:
-   - **Name**: `exoplanet-model`
-   - **SDK**: Gradio
-   - **Runtime**: Python
-   - **Visibility**: Public (for API access)
-4. Upload the files from the `huggingface-space/` directory:
-   - `app.py`
-   - `requirements.txt`
-   - `README.md`
-   - `example_dataset.csv`
-   - `model.pkl` (your trained model file)
+Used https://huggingface.co/spaces/mariofabelo/AI_Exoplanet_Detection_Mario_copy for python backend and sent output data to frontend through FastAPI
 
-5. Update the `NEXT_PUBLIC_HF_SPACE_URL` in your `.env.local` with your actual Space URL
+The backend provides:
+- **FastAPI endpoint** at `/api/predict` for model inference
+- **CSV file processing** for Kepler, K2, and TESS datasets
+- **Model predictions** using trained Random Forest models
+- **Performance metrics** calculation and return
 
 ## Features
 
-- **File Upload**: Upload CSV datasets through a clean web interface
-- **Model Inference**: Send data to Hugging Face Space for processing
-- **Metrics Visualization**: Display model performance metrics in both tabular and chart format
-- **Responsive Design**: Modern UI with Tailwind CSS
+- **Interactive File Upload**: Upload Kepler, K2, and TESS CSV datasets for analysis
+- **AI Model Inference**: Send data to Hugging Face Space for exoplanet classification
+- **Performance Metrics Visualization**: 
+  - Bar charts showing accuracy, precision, recall, specificity, and F1 scores
+  - Pie chart showing prediction accuracy breakdown
+  - Runtime information display
+- **Prediction Results Table**: 
+  - Detailed view of individual exoplanet predictions
+  - Color-coded status indicators (Correct/Incorrect)
+  - Kepler object names and classification results
+- **Tabbed Interface**: Switch between metrics overview and detailed predictions
+- **Responsive Design**: Modern UI with Tailwind CSS and NASA branding
 - **Real-time Feedback**: Loading states and error handling
 
 ## Usage
 
 1. Open the application in your browser (usually `http://localhost:3000`)
-2. Upload a CSV file with your dataset (must include a 'target' column)
-3. Click "Run Model" to send the data to your Hugging Face Space
-4. View the performance metrics displayed in both numerical and visual formats
+2. Upload a CSV file with your Kepler, K2, or TESS dataset
+3. Click "Run Model" to send the data to the AI Exoplanet Detection backend
+4. View the performance metrics and individual exoplanet predictions
+5. Switch between "Metrics Overview" and "Detailed Predictions" tabs for different views
 
 ## API Integration
 
-The frontend communicates with the Hugging Face Space via HTTP POST requests to the `/api/predict` endpoint. The Space processes the uploaded CSV file and returns JSON-formatted metrics.
+The frontend communicates with the Hugging Face Space via HTTP POST requests to the `/api/predict` endpoint. The API expects:
+
+- **Input**: CSV file upload via FormData containing exoplanet data
+- **Output**: JSON response with predictions and performance metrics:
+  ```json
+  {
+    "predictions": [
+      {
+        "kepoi_name": "K00752.01",
+        "prediction": 1,
+        "actual": 1
+      }
+    ],
+    "test_set": {
+      "accuracy": 0.968,
+      "precision": 0.960,
+      "recall_sensitivity": 0.962,
+      "specificity": 0.973,
+      "f1": 0.961
+    },
+    "runtime_seconds": 0.23
+  }
+  ```
 
 ## Technologies Used
 
-- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS, Recharts
-- **Backend**: Python, Gradio, scikit-learn, pandas
-- **Deployment**: Hugging Face Spaces, Vercel (for frontend)
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS, Recharts, Radix UI
+- **Backend**: Python, FastAPI, scikit-learn, pandas, Random Forest models
+- **Machine Learning**: Trained on combined Kepler, K2, and TESS datasets
+- **Deployment**: Hugging Face Spaces (backend), Vercel/Netlify (frontend)
 
 ## Development
 
