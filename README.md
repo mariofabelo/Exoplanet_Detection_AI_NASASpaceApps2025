@@ -26,7 +26,6 @@ Trained model on combined Kepler, K2 and TESS datasets
 │   │   └── ui/               # Reusable UI components
 │   │       ├── button.tsx
 │   │       └── card.tsx
-│   ├── lib/
 │   │   ├── runModel.ts       # API integration logic
 │   │   ├── config.ts         # Configuration settings
 │   │   └── utils.ts          # Utility functions
@@ -133,6 +132,8 @@ The frontend communicates with the Hugging Face Space via HTTP POST requests to 
     "runtime_seconds": 0.23
   }
   ```
+
+Used https://huggingface.co/spaces/mariofabelo/AI_Exoplanet_Detection_Mario_copy for python backend and sent output data to frontend through FastAPI
 
 ## Technologies Used
 
