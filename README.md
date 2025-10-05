@@ -2,6 +2,13 @@
 
 A full-stack application that combines a Next.js frontend with a Hugging Face Space backend to visualize machine learning model performance metrics.
 
+Trained model on combined Kepler, K2 and TESS datasets
+
+### Datasets
+Kepler: https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=cumulative
+K2: https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=k2pandc
+TESS: https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=TOI
+
 ## Project Structure
 
 ```
@@ -10,7 +17,7 @@ A full-stack application that combines a Next.js frontend with a Hugging Face Sp
 │   ├── app/
 │   ├── components/
 │   ├── lib/
-│   └── .env.local
+│   └── .env
 └── huggingface-space/
     ├── app.py
     ├── requirements.txt
@@ -81,11 +88,12 @@ A full-stack application that combines a Next.js frontend with a Hugging Face Sp
 ## API Integration
 
 The frontend communicates with the Hugging Face Space via HTTP POST requests to the `/api/predict` endpoint. The Space processes the uploaded CSV file and returns JSON-formatted metrics.
+Used https://huggingface.co/spaces/mariofabelo/AI_Exoplanet_Detection_Mario_copy for python backend and sent output data to frontend through FastAPI
 
 ## Technologies Used
 
 - **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS, Recharts
-- **Backend**: Python, Gradio, scikit-learn, pandas
+- **Backend**: Python, Gradio, scikit-learn, pandas, FastAPI
 - **Deployment**: Hugging Face Spaces, Vercel (for frontend)
 
 ## Development
