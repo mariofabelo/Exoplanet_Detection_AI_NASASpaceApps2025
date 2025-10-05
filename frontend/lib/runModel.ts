@@ -50,11 +50,11 @@ export async function runModelOnDataset(file: File): Promise<ModelResults> {
 /**
  * Converts prediction results to CSV format for download
  * @param predictions Array of prediction results
- * @returns CSV string with kepoi_name, prediction, actual, and confidence columns
+ * @returns CSV string with kepoi_name, prediction, and confidence columns
  */
 export function predictionsToCSV(predictions: PredictionResult[]): string {
-  const headers = "kepoi_name,prediction,actual,confidence\n";
-  const rows = predictions.map(pred => `${pred.kepoi_name},${pred.prediction},${pred.actual},${pred.confidence.toFixed(4)}`).join("\n");
+  const headers = "kepoi_name,prediction,confidence\n";
+  const rows = predictions.map(pred => `${pred.kepoi_name},${pred.prediction},${pred.confidence.toFixed(4)}`).join("\n");
   return headers + rows;
 }
 
