@@ -2,6 +2,7 @@ export interface PredictionResult {
   kepoi_name: string;
   prediction: number;
   actual: number;
+  confidence: number;
 }
 
 export interface TestSetMetrics {
@@ -44,4 +45,37 @@ export async function runModelOnDataset(file: File): Promise<ModelResults> {
   }
 
   return data as ModelResults;
+}
+
+/**
+ * Converts prediction results to CSV format for download
+ * @param predictions Array of prediction results
+ * @returns CSV string with kepoi_name, prediction, actual, and confidence columns
+ */
+export function predictionsToCSV(predictions: PredictionResult[]): string {
+  const headers = "kepoi_name,prediction,actual,confidence\n";
+  const rows = predictions.map(pred => `${pred.kepoi_name},${pred.prediction},${pred.actual},${pred.confidence.toFixed(4)}`).join("\n");
+  return headers + rows;
+}
+
+/**
+ * Downloads predictions as a CSV file
+ * @param predictions Array of prediction results
+ * @param filename Optional filename (defaults to timestamp-based name)
+ */
+export function downloadPredictionsCSV(predictions: PredictionResult[], filename?: string): void {
+  const csvContent = predictionsToCSV(predictions);
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename || `exoplanet_predictions_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 }
