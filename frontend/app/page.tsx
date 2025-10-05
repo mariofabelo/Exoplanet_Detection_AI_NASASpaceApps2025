@@ -10,15 +10,81 @@ export default function HomePage() {
   const [file, setFile] = useState<File | null>(null);
   const [results, setResults] = useState<ModelResults | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<'metrics' | 'predictions'>('metrics');
+  const [selectedTab, setSelectedTab] = useState<'predictions'>('predictions');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [classificationFilter, setClassificationFilter] = useState<'all' | 'correct' | 'incorrect'>('all');
+  const [classificationFilter, setClassificationFilter] = useState<'all' | 'candidate' | 'confirmed'>('all');
+  const [confidenceSort, setConfidenceSort] = useState<'none' | 'asc' | 'desc'>('none');
+  const [showColumnInfo, setShowColumnInfo] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [idColumnName, setIdColumnName] = useState<string>('');
+  const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+
+  // Required CSV columns for the model
+  const requiredColumns = [
+    'Period', 'Period_err1', 'Period_err2', 'Duration', 'Duration_err1',
+    'Duration_err2', 'Rho', 'Rho_err1', 'Rho_err2', 'Rp', 'Rp_err1',
+    'Rp_err2', 'Insolation', 'Insolation_err1', 'Insolation_err2', 'SNR',
+    'Ts', 'Ts_err1', 'Ts_err2', 'log(g)', 'log(g)_err1', 'log(g)_err2',
+    'Rs', 'Rs_err1', 'Rs_err2'
+  ];
+
+  // Column descriptions for tooltips
+  const columnDescriptions: Record<string, string> = {
+    'Period': 'Orbital period of the planet. [days]',
+    'Period_err1': 'Upper uncertainty for the orbital period of the planet.',
+    'Period_err2': 'Lower uncertainty for the orbital period of the planet.',
+    'Duration': 'Transit duration. [hrs]',
+    'Duration_err1': 'Upper uncertainty for the transit duration',
+    'Duration_err2': 'Lower uncertainty for the transit duration',
+    'Rho': 'Fitted stellar density [g/cm^3]',
+    'Rho_err1': 'Upper uncertainty for the fitted stellar density',
+    'Rho_err2': 'Lower uncertainty for the fitted stellar density',
+    'Rp': 'Radius of the planet [Earth radii]',
+    'Rp_err1': 'Upper uncertainty for the radius of the planet',
+    'Rp_err2': 'Lower uncertainty for the radius of the planet',
+    'Insolation': 'Flux at the surface of the planet received from the star. [earth fluxes]',
+    'Insolation_err1': 'Upper uncertainty for the insolation',
+    'Insolation_err2': 'Lower uncertainty for the insolation',
+    'SNR': 'Signal to noise ratio.',
+    'Ts': 'Effective temperature of the star [K]',
+    'Ts_err1': 'Upper uncertainty for the effective temperature of the star',
+    'Ts_err2': 'Lower uncertainty for the effective temperature of the star',
+    'log(g)': 'Star surface gravity [log_10(cm/s^2)]',
+    'log(g)_err1': 'Upper uncertainty for the star surface gravity',
+    'log(g)_err2': 'Lower uncertainty for the star surface gravity',
+    'Rs': 'Radius of the star [solar radii]',
+    'Rs_err1': 'Upper uncertainty for the radius of the star',
+    'Rs_err2': 'Lower uncertainty for the radius of the star'
+  };
+
+  // Format columns as Python list string
+  const columnsAsPythonList = `['${requiredColumns.join("', '")}']`;
+
+  const handleCopyColumns = async () => {
+    try {
+      await navigator.clipboard.writeText(columnsAsPythonList);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = columnsAsPythonList;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }
+  };
 
   const handleRunModel = async () => {
     if (!file) return alert("Please upload a CSV file first.");
     setLoading(true);
     try {
-      const data = await runModelOnDataset(file);
+      const data = await runModelOnDataset(file, idColumnName);
       setResults(data);
     } catch (err) {
       console.error(err);
@@ -60,34 +126,53 @@ export default function HomePage() {
     }
   };
 
-  // Prepare chart data for metrics
-  const metricsChartData = results
-    ? Object.entries(results.test_set).map(([key, value]) => ({ 
-        metric: key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()), 
-        value: value as number 
-      }))
-    : [];
+  const handleColumnMouseEnter = (column: string, e: React.MouseEvent) => {
+    setHoveredColumn(column);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipPosition({ 
+      x: rect.left + rect.width / 2, 
+      y: rect.top 
+    });
+  };
 
-  // Prepare data for prediction accuracy pie chart
-  const predictionAccuracy = results ? (() => {
-    const correct = results.predictions.filter(p => p.prediction === p.actual).length;
-    const total = results.predictions.length;
-    return [
-      { name: 'Correct', value: correct, color: '#10B981' },
-      { name: 'Incorrect', value: total - correct, color: '#EF4444' }
-    ];
-  })() : [];
+  const handleColumnMouseLeave = () => {
+    setHoveredColumn(null);
+  };
 
-  // Filter predictions based on classification filter
+  // Prepare data for prediction distribution pie chart
+  const predictionDistribution = results ? [
+    { name: 'CANDIDATE', value: results.candidate_count, color: '#3B82F6' },
+    { name: 'CONFIRMED', value: results.confirmed_count, color: '#10B981' }
+  ] : [];
+
+  // Filter and sort predictions based on classification filter and confidence sort
   const filteredPredictions = results ? (() => {
+    let filtered = results.predictions;
+    
+    // Apply classification filter
     switch (classificationFilter) {
-      case 'correct':
-        return results.predictions.filter(p => p.prediction === p.actual);
-      case 'incorrect':
-        return results.predictions.filter(p => p.prediction !== p.actual);
+      case 'candidate':
+        filtered = results.predictions.filter(p => p.prediction === 1);
+        break;
+      case 'confirmed':
+        filtered = results.predictions.filter(p => p.prediction === 0);
+        break;
       default:
-        return results.predictions;
+        filtered = results.predictions;
     }
+    
+    // Apply confidence sorting
+    if (confidenceSort !== 'none') {
+      filtered = [...filtered].sort((a, b) => {
+        if (confidenceSort === 'asc') {
+          return a.confidence - b.confidence;
+        } else {
+          return b.confidence - a.confidence;
+        }
+      });
+    }
+    
+    return filtered;
   })() : [];
 
   return (
@@ -125,7 +210,8 @@ export default function HomePage() {
           </div>
           
           <p className="text-base sm:text-lg text-gray-700 max-w-3xl leading-relaxed px-4">
-            Analyse exoplanet candidate data using our trained machine learning models.
+            Upload your exoplanet candidate data to get predictions from our trained machine learning model. 
+            The model will classify each object as either a CANDIDATE or CONFIRMED exoplanet.
           </p>
         </div>
 
@@ -138,9 +224,111 @@ export default function HomePage() {
             <CardDescription className="text-gray-600">
               Upload CSV files containing exoplanet candidate data for analysis
             </CardDescription>
+            
+            {/* CSV Format Info - Non-invasive help section */}
+            <div className="mt-3">
+              <button
+                onClick={() => setShowColumnInfo(!showColumnInfo)}
+                className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 transition-colors duration-200"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Required CSV format</span>
+                <svg 
+                  className={`w-4 h-4 transition-transform duration-200 ${showColumnInfo ? 'rotate-180' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {showColumnInfo && (
+                <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg animate-fade-in">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-blue-900">Required CSV Columns ({requiredColumns.length} total):</h4>
+                    <button
+                      onClick={handleCopyColumns}
+                      className={`flex items-center space-x-1 px-3 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                        copySuccess 
+                          ? 'bg-green-100 text-green-700 border border-green-200' 
+                          : 'bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-200'
+                      }`}
+                    >
+                      {copySuccess ? (
+                        <>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                          <span>Copy as list</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
+                    {requiredColumns.map((column, index) => (
+                      <div 
+                        key={index} 
+                        className="bg-white px-2 py-1 rounded border border-blue-100 text-blue-800 font-mono cursor-help relative"
+                        onMouseEnter={(e) => handleColumnMouseEnter(column, e)}
+                        onMouseLeave={handleColumnMouseLeave}
+                      >
+                        {column}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-blue-700 mt-2">
+                    Your CSV file must contain all these columns with the exact names shown above.
+                  </p>
+                </div>
+              )}
+            </div>
           </CardHeader>
+          
+          {/* Tooltip for column descriptions */}
+          {hoveredColumn && (
+            <div 
+              className="fixed z-50 bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg pointer-events-none max-w-xs"
+              style={{
+                left: `${tooltipPosition.x}px`,
+                top: `${tooltipPosition.y - 5}px`,
+                transform: 'translateX(-50%) translateY(-100%)'
+              }}
+            >
+              <div className="font-semibold text-blue-300 mb-1">{hoveredColumn}</div>
+              <div className="text-gray-200">{columnDescriptions[hoveredColumn]}</div>
+              <div className="absolute top-full left-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 transform -translate-x-1/2"></div>
+            </div>
+          )}
           <CardContent className="p-4 sm:p-5 space-y-4 sm:space-y-5">
             <div className="space-y-3">
+              {/* ID Column Input */}
+              <div className="space-y-2">
+                <label htmlFor="id-column" className="block text-sm font-medium text-gray-700">
+                  ID Column Name
+                </label>
+                <input
+                  id="id-column"
+                  type="text"
+                  value={idColumnName}
+                  onChange={(e) => setIdColumnName(e.target.value)}
+                  placeholder="Enter the name of your ID column (e.g., kepoi_name, pl_name, id)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                />
+                <p className="text-xs text-gray-500">
+                  This column will be used to identify each row in the results. Leave empty to use row numbers.
+                </p>
+              </div>
+              
               <div className="relative">
                 <input
                   id="csv-upload"
@@ -244,46 +432,10 @@ export default function HomePage() {
         {results && (
           <Card className="w-full max-w-7xl mx-4 sm:mx-0 research-card shadow-data animate-slide-up">
             <CardContent className="p-4 sm:p-6">
-              <div className="flex justify-center mb-6">
-                <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg border border-gray-200">
-                  <button
-                    onClick={() => setSelectedTab('metrics')}
-                    className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
-                      selectedTab === 'metrics'
-                        ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                      <span>Model Performance</span>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => setSelectedTab('predictions')}
-                    className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
-                      selectedTab === 'predictions'
-                        ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      <span>Classification Results ({results.predictions.length})</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              {selectedTab === 'metrics' && (
-                <div className="space-y-6">
-                  <div className="text-center space-y-2 border-b border-gray-200 pb-4">
+                <div className="space-y-5">
+                  <div className="text-center space-y-3 border-b border-gray-200 pb-4">
                     <h2 className="text-2xl font-bold scientific-header text-gray-900">
-                      Model Performance Analysis
+                      Exoplanet Classification Results
                     </h2>
                     <div className="flex items-center justify-center space-x-8 text-sm text-gray-600">
                       <div className="flex items-center space-x-2">
@@ -297,149 +449,15 @@ export default function HomePage() {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                         </svg>
-                        <span className="data-metric">Samples: {results.predictions.length}</span>
+                        <span className="data-metric">Total Samples: {results.total_samples}</span>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Performance Metrics */}
-                    <div className="space-y-3">
-                      <h3 className="text-lg font-semibold scientific-header text-gray-900 mb-3 flex items-center space-x-2">
-                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                        <span>Classification Metrics</span>
-                      </h3>
-                      {Object.entries(results.test_set).map(([key, value], index) => (
-                        <div key={key} className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors duration-200">
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium text-gray-700 capitalize">
-                              {key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                            </span>
-                            <div className="flex items-center space-x-3">
-                              <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-gradient-metric rounded-full transition-all duration-1000 ease-out"
-                                  style={{ width: `${((value as number) * 100).toFixed(1)}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-lg font-bold data-metric text-gray-900 min-w-[3.5rem] text-right">
-                                {((value as number) * 100).toFixed(1)}%
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Data Visualizations */}
-                    <div className="space-y-5">
-                      {/* Performance Chart */}
-                      <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-metric">
-                        <h3 className="text-lg font-semibold scientific-header text-gray-900 mb-3 flex items-center space-x-2">
-                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                          </svg>
-                          <span>Performance Metrics</span>
-                        </h3>
-                        <div className="h-72">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={metricsChartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
-                              <XAxis 
-                                dataKey="metric" 
-                                tick={{ fontSize: 11, fill: '#6b7280' }}
-                                angle={-45}
-                                textAnchor="end"
-                                height={80}
-                              />
-                              <YAxis 
-                                domain={[0, 1]} 
-                                tick={{ fontSize: 11, fill: '#6b7280' }}
-                                tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
-                              />
-                              <Tooltip 
-                                contentStyle={{
-                                  backgroundColor: 'white',
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: '8px',
-                                  color: '#374151',
-                                  fontSize: '12px'
-                                }}
-                                formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, 'Score']}
-                                labelFormatter={(label) => `${label}`}
-                              />
-                              <Bar 
-                                dataKey="value" 
-                                fill="url(#scientificBar)"
-                                radius={[4, 4, 0, 0]}
-                              />
-                              <defs>
-                                <linearGradient id="scientificBar" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#3b82f6" />
-                                  <stop offset="100%" stopColor="#1d4ed8" />
-                                </linearGradient>
-                              </defs>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-
-                      {/* Classification Accuracy Chart */}
-                      <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-metric">
-                        <h3 className="text-lg font-semibold scientific-header text-gray-900 mb-3 flex items-center space-x-2">
-                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span>Classification Accuracy</span>
-                        </h3>
-                        <div className="h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={predictionAccuracy}
-                                cx="50%"
-                                cy="50%"
-                                outerRadius={80}
-                                dataKey="value"
-                                label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(1)}%`}
-                                labelLine={false}
-                              >
-                                {predictionAccuracy.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <Tooltip 
-                                contentStyle={{
-                                  backgroundColor: 'white',
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: '8px',
-                                  color: '#374151',
-                                  fontSize: '12px'
-                                }}
-                                formatter={(value) => [value, 'Samples']} 
-                              />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {selectedTab === 'predictions' && (
-                <div className="space-y-5">
-                  <div className="text-center space-y-3 border-b border-gray-200 pb-4">
-                    <h2 className="text-2xl font-bold scientific-header text-gray-900">
-                      Classification Results
-                    </h2>
                     <p className="text-gray-600">
                       Showing {filteredPredictions.length} of {results.predictions.length} total classifications
                     </p>
                     
                     {/* Download and Filter Controls */}
-                    <div className="flex justify-center items-center space-x-4">
+                    <div className="flex flex-col lg:flex-row justify-center items-center space-y-4 lg:space-y-0 lg:space-x-4">
                       {/* Download Button */}
                       <Button
                         onClick={() => downloadPredictionsCSV(results.predictions)}
@@ -450,53 +468,145 @@ export default function HomePage() {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
-                          <span>Download CSV</span>
+                          <span>Download CSV of Predictions</span>
                         </div>
                       </Button>
                       
-                      {/* Filter Controls */}
-                      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg border border-gray-200">
-                        <button
-                          onClick={() => setClassificationFilter('all')}
-                          className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
-                            classificationFilter === 'all'
-                              ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                          }`}
-                        >
-                          All ({results.predictions.length})
-                        </button>
-                        <button
-                          onClick={() => setClassificationFilter('correct')}
-                          className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
-                            classificationFilter === 'correct'
-                              ? 'bg-white text-green-600 shadow-sm border border-gray-200'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center space-x-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            <span>Correct ({results.predictions.filter(p => p.prediction === p.actual).length})</span>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => setClassificationFilter('incorrect')}
-                          className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
-                            classificationFilter === 'incorrect'
-                              ? 'bg-white text-red-600 shadow-sm border border-gray-200'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex items-center space-x-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                            <span>Incorrect ({results.predictions.filter(p => p.prediction !== p.actual).length})</span>
-                          </div>
-                        </button>
+                      {/* Filter and Sort Controls */}
+                      <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                        {/* Classification Filter Controls */}
+                        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg border border-gray-200">
+                          <button
+                            onClick={() => setClassificationFilter('all')}
+                            className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
+                              classificationFilter === 'all'
+                                ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            All ({results.predictions.length})
+                          </button>
+                          <button
+                            onClick={() => setClassificationFilter('candidate')}
+                            className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
+                              classificationFilter === 'candidate'
+                                ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                              </svg>
+                              <span>CANDIDATE ({results.candidate_count})</span>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => setClassificationFilter('confirmed')}
+                            className={`px-4 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
+                              classificationFilter === 'confirmed'
+                                ? 'bg-white text-green-600 shadow-sm border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>CONFIRMED ({results.confirmed_count})</span>
+                            </div>
+                          </button>
+                        </div>
+                        
+                        {/* Confidence Sort Controls */}
+                        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg border border-gray-200">
+                          <button
+                            onClick={() => setConfidenceSort('none')}
+                            className={`px-3 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
+                              confidenceSort === 'none'
+                                ? 'bg-white text-gray-600 shadow-sm border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                              </svg>
+                              <span>No Sort</span>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => setConfidenceSort('asc')}
+                            className={`px-3 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
+                              confidenceSort === 'asc'
+                                ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
+                              </svg>
+                              <span>Confidence ↑</span>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => setConfidenceSort('desc')}
+                            className={`px-3 py-2 rounded-md transition-all duration-200 font-medium text-sm ${
+                              confidenceSort === 'desc'
+                                ? 'bg-white text-blue-600 shadow-sm border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-1">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h9m5-4v12m0 0l-4-4m4 4l4-4" />
+                              </svg>
+                              <span>Confidence ↓</span>
+                            </div>
+                          </button>
+                        </div>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Prediction Distribution Chart */}
+                  <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-metric">
+                    <h3 className="text-lg font-semibold scientific-header text-gray-900 mb-3 flex items-center space-x-2">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                      </svg>
+                      <span>Prediction Distribution</span>
+                    </h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={predictionDistribution}
+                            cx="50%"
+                            cy="50%"
+                            outerRadius={80}
+                            dataKey="value"
+                            label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(1)}%`}
+                            labelLine={false}
+                          >
+                            {predictionDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            contentStyle={{
+                              backgroundColor: 'white',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '8px',
+                              color: '#374151',
+                              fontSize: '12px'
+                            }}
+                            formatter={(value) => [value, 'Samples']} 
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
 
@@ -505,11 +615,10 @@ export default function HomePage() {
                       <table className="w-full">
                         <thead className="bg-gray-50">
                           <tr className="border-b border-gray-200">
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kepler Object</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Identifier</th>
                             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Predicted Class</th>
-                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">True Class</th>
                             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Classification</th>
+                            <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Model Prediction</th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -517,7 +626,7 @@ export default function HomePage() {
                             <tr key={index} className="hover:bg-gray-50 transition-colors duration-150">
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <code className="text-sm data-metric text-gray-900">
-                                  {pred.kepoi_name}
+                                  {pred.user_id || pred.kepoi_name || pred.pl_name || `Row ${pred.row_index || 0}`}
                                 </code>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -526,16 +635,7 @@ export default function HomePage() {
                                     ? 'bg-blue-100 text-blue-800' 
                                     : 'bg-green-100 text-green-800'
                                 }`}>
-                                  {pred.prediction === 1 ? 'CANDIDATE' : 'CONFIRMED'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center">
-                                <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                  pred.actual === 1 
-                                    ? 'bg-blue-100 text-blue-800' 
-                                    : 'bg-green-100 text-green-800'
-                                }`}>
-                                  {pred.actual === 1 ? 'CANDIDATE' : 'CONFIRMED'}
+                                  {pred.prediction_label}
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center">
@@ -565,23 +665,32 @@ export default function HomePage() {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-center">
                                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                  pred.prediction === pred.actual
+                                  pred.confidence >= 0.8 
                                     ? 'bg-green-100 text-green-800'
-                                    : 'bg-red-100 text-red-800'
+                                    : pred.confidence >= 0.6 
+                                      ? 'bg-yellow-100 text-yellow-800'
+                                      : 'bg-red-100 text-red-800'
                                 }`}>
-                                  {pred.prediction === pred.actual ? (
+                                  {pred.confidence >= 0.8 ? (
                                     <>
                                       <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                       </svg>
-                                      Correct
+                                      High Confidence
+                                    </>
+                                  ) : pred.confidence >= 0.6 ? (
+                                    <>
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      Medium Confidence
                                     </>
                                   ) : (
                                     <>
                                       <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
                                       </svg>
-                                      Incorrect
+                                      Low Confidence
                                     </>
                                   )}
                                 </span>
@@ -606,7 +715,6 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
-              )}
             </CardContent>
           </Card>
         )}
