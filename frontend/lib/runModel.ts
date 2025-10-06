@@ -31,16 +31,17 @@ export async function runModelOnDataset(file: File, idColumnName?: string): Prom
   }
 
   // Use the FastAPI endpoint instead of Gradio
-  const apiUrl = `${config.HF_SPACE_URL}${config.API_ENDPOINTS.PREDICT}`;
+  const apiUrl = config.HF_SPACE_URL;
 
   console.log('Making request to:', apiUrl);
   console.log('File:', file.name, 'Size:', file.size);
+  console.log('Method: POST');
+  console.log('FormData contents:', Array.from(formData.entries()));
 
   const res = await fetch(apiUrl, {
-    method: "POST",
+    method: "POST", // Explicitly ensure POST method
     body: formData,
     mode: 'cors', // Explicitly set CORS mode
-    credentials: 'omit', // Don't send credentials for CORS
     headers: {
       // Don't set Content-Type, let the browser set it with boundary for FormData
     }
