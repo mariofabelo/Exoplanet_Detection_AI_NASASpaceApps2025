@@ -39,6 +39,11 @@ export async function runModelOnDataset(file: File, idColumnName?: string): Prom
   const res = await fetch(apiUrl, {
     method: "POST",
     body: formData,
+    mode: 'cors', // Explicitly set CORS mode
+    credentials: 'omit', // Don't send credentials for CORS
+    headers: {
+      // Don't set Content-Type, let the browser set it with boundary for FormData
+    }
   });
 
   console.log('Response status:', res.status, res.statusText);
