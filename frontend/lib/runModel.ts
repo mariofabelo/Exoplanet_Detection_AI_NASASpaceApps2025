@@ -33,21 +33,32 @@ export async function runModelOnDataset(file: File, idColumnName?: string): Prom
   // Use the FastAPI endpoint instead of Gradio
   const apiUrl = `${config.HF_SPACE_URL}${config.API_ENDPOINTS.PREDICT}`;
 
+  console.log('Making request to:', apiUrl);
+  console.log('File:', file.name, 'Size:', file.size);
+
   const res = await fetch(apiUrl, {
     method: "POST",
     body: formData,
   });
 
+  console.log('Response status:', res.status, res.statusText);
+  console.log('Response headers:', Object.fromEntries(res.headers.entries()));
+
   if (!res.ok) {
-    throw new Error(`Failed to run model: ${res.status} ${res.statusText}`);
+    const errorText = await res.text();
+    console.error('Error response body:', errorText);
+    throw new Error(`Failed to run model: ${res.status} ${res.statusText} - ${errorText}`);
   }
 
   const data = await res.json();
+  console.log('Response data:', data);
   
   if (data.error) {
+    console.error('Model error in response:', data.error);
     throw new Error(`Model error: ${data.error}`);
   }
 
+  console.log('Successfully parsed response, returning data');
   return data as ModelResults;
 }
 

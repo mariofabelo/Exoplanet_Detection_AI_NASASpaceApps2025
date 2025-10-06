@@ -87,8 +87,9 @@ export default function HomePage() {
       const data = await runModelOnDataset(file, idColumnName);
       setResults(data);
     } catch (err) {
-      console.error(err);
-      alert("Error running model.");
+      console.error('Error in handleRunModel:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      alert(`Error running model: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
