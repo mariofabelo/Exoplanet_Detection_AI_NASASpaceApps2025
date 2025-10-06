@@ -324,6 +324,9 @@ export default function HomePage() {
                     <div>
                       <h4 className="text-sm font-medium text-blue-900">Need sample data?</h4>
                       <p className="text-xs text-blue-700">Download our K2 dataset to test the model</p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        <strong>Tip:</strong> Use <code className="bg-blue-100 px-1 rounded">pl_name</code> as ID Column Name
+                      </p>
                     </div>
                   </div>
                   <Button
