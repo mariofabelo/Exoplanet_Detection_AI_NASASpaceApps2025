@@ -65,7 +65,7 @@ Trained model on combined Kepler, K2 and TESS datasets
 
 3. Create `.env.local` file with your environment variables:
    ```
-   NEXT_PUBLIC_HF_SPACE_URL=https://huggingface.co/spaces/mariofabelo/AI_Exoplanet_Detection_Mario_copy/api/predict
+   NEXT_PUBLIC_HF_SPACE_URL=https://mariofabelo-ai-exoplanet-detection-mario-copy.hf.space
    ```
 
 4. Run the development server:
@@ -78,7 +78,7 @@ Trained model on combined Kepler, K2 and TESS datasets
 Used https://huggingface.co/spaces/mariofabelo/AI_Exoplanet_Detection_Mario_copy for python backend and sent output data to frontend through FastAPI
 
 The backend provides:
-- **FastAPI endpoint** at `/api/predict` for model inference
+- **FastAPI endpoint** at `/predict` for model inference
 - **CSV file processing** for Kepler, K2, and TESS datasets
 - **Model predictions** using trained Random Forest models
 - **Performance metrics** calculation and return
@@ -109,7 +109,7 @@ The backend provides:
 
 ## API Integration
 
-The frontend communicates with the Hugging Face Space via HTTP POST requests to the `/api/predict` endpoint. The API expects:
+The frontend communicates with the Hugging Face Space via HTTP POST requests to the `/predict` endpoint. The API expects:
 
 - **Input**: CSV file upload via FormData containing exoplanet data
 - **Output**: JSON response with predictions and performance metrics:
